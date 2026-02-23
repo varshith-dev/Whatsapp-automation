@@ -824,7 +824,9 @@ class WhatsAppAutomatorApp(QMainWindow):
                                 self.signals.log_msg.emit(f"[Auto-Reply] Message from {chat_title}: '{latest_msg_text}'")
                                 
                                 if latest_msg_text:
-                                    for kw, reply_text in self.current_presets.items():
+                                    # Read presets LIVE from UI (so newly added ones work immediately)
+                                    live_presets = self.get_presets_dict()
+                                    for kw, reply_text in live_presets.items():
                                         if kw.lower() == latest_msg_text.lower():
                                             self.signals.log_msg.emit(f"[Auto-Reply] MATCH '{kw}'! Sending reply...")
                                             self.signals.history_msg.emit(f"IN ({chat_title}): '{latest_msg_text}' | OUT: '{reply_text}'")
@@ -895,10 +897,16 @@ class WhatsAppAutomatorApp(QMainWindow):
             self.signals.finished.emit()
 
 from PyQt6 import QtCore
+from PyQt6.QtGui import QFont
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+    
+    # Set a font that supports emojis on Windows
+    emoji_font = QFont("Segoe UI Emoji", 10)
+    emoji_font.setFamilies(["Segoe UI Emoji", "Segoe UI", "Arial"])
+    app.setFont(emoji_font)
     
     window = WhatsAppAutomatorApp()
     window.show()
