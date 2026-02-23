@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Farmer Registration</title>
+    <!-- Modern, simple aesthetic -->
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            background-color: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 400px;
+        }
+
+        h2 {
+            text-align: center;
+            color: #1a73e8;
+            margin-top: 0;
+            margin-bottom: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #444;
+        }
+
+        input[type="text"],
+        input[type="tel"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+
+        input[type="text"]:focus,
+        input[type="tel"]:focus {
+            outline: none;
+            border-color: #1a73e8;
+            box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            background-color: #1a73e8;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: #1557b0;
+        }
+
+        #statusMessage {
+            margin-top: 20px;
+            text-align: center;
+            font-weight: bold;
+            min-height: 24px;
+        }
+
+        .success {
+            color: #0f9d58;
+        }
+
+        .error {
+            color: #d23f31;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <h2>Farmer Registration</h2>
+
+        <div class="form-group">
+            <label for="farmerName">Full Name</label>
+            <input type="text" id="farmerName" placeholder="e.g. John Doe" required>
+        </div>
+
+        <div class="form-group">
+            <label for="phoneNumber">WhatsApp Number</label>
+            <input type="tel" id="phoneNumber" placeholder="e.g. +919876543210" required>
+        </div>
+
+        <button id="registerBtn">Register</button>
+
+        <div id="statusMessage"></div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        // Import the functions you need from the SDKs you need
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-analytics.js";
+        import { getDatabase, ref, push, set } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyCznxVw1-MXtsauYiyAA9Jor8SZ3irZO-E",
+            authDomain: "db-vt-gsocp.firebaseapp.com",
+            databaseURL: "https://db-vt-gsocp-default-rtdb.firebaseio.com",
+            projectId: "db-vt-gsocp",
+            storageBucket: "db-vt-gsocp.firebasestorage.app",
+            messagingSenderId: "619171992371",
+            appId: "1:619171992371:web:c3fd02cd0687d26775e446",
+            measurementId: "G-DK2E3PG516"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const analytics = getAnalytics(app);
+
+        // Initialize Realtime Database
+        const database = getDatabase(app);
+
+        // Handle Form Submission
+        document.getElementById('registerBtn').addEventListener('click', () => {
+            const nameInput = document.getElementById('farmerName').value.trim();
+            const phoneInput = document.getElementById('phoneNumber').value.trim();
+            const statusDiv = document.getElementById('statusMessage');
+
+            // Basic Validation
+            if (!nameInput || !phoneInput) {
+                statusDiv.textContent = "Please fill in all fields.";
+                statusDiv.className = "error";
+                return;
+            }
+
+            // Add visual feedback
+            document.getElementById('registerBtn').textContent = "Registering...";
+            document.getElementById('registerBtn').disabled = true;
+
+            // Push a new record to the "registrations" node
+            // Note: The Python bot is listening precisely to this "registrations" path!
+            const registrationsListRef = ref(database, 'registrations');
+            const newRegistrationRef = push(registrationsListRef);
+
+            set(newRegistrationRef, {
+                "Name": nameInput,
+                "Phone Number": phoneInput,
+                "Message Status": "Pending" // The bot looks for "Pending" or empty
+            })
+                .then(() => {
+                    // Success
+                    statusDiv.textContent = "Registration Successful!";
+                    statusDiv.className = "success";
+
+                    // Clear inputs
+                    document.getElementById('farmerName').value = "";
+                    document.getElementById('phoneNumber').value = "";
+
+                    // Reset button
+                    document.getElementById('registerBtn').textContent = "Register";
+                    document.getElementById('registerBtn').disabled = false;
+                })
+                .catch((error) => {
+                    // Error
+                    console.error(error);
+                    statusDiv.textContent = "Error saving registration. Please try again.";
+                    statusDiv.className = "error";
+
+                    document.getElementById('registerBtn').textContent = "Register";
+                    document.getElementById('registerBtn').disabled = false;
+                });
+        });
+    </script>
+
+</body>
+
+</html>

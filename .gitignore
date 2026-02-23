@@ -1,0 +1,21 @@
+# Credentials
+firebase_credentials.json
+
+# Chrome profiles
+Selenium_WA_Profile/
+WAManager_Chrome_Profile/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
