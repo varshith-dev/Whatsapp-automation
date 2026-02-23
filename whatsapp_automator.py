@@ -97,7 +97,7 @@ class WhatsAppAutomatorApp(QMainWindow):
 
         # Status Panel
         self.status_layout = QHBoxLayout()
-        self.lbl_conn_status = QLabel("🔴 Disconnected (Check Settings Tab)")
+        self.lbl_conn_status = QLabel("[OFFLINE] Disconnected (Check Settings Tab)")
         self.lbl_conn_status.setStyleSheet("font-weight: bold; font-size: 14px;")
         
         self.lbl_pending = QLabel("Pending Messages: --")
@@ -116,18 +116,18 @@ class WhatsAppAutomatorApp(QMainWindow):
 
         # Controls Panel
         self.control_layout = QHBoxLayout()
-        self.btn_start = QPushButton("▶️ Start")
+        self.btn_start = QPushButton("Start")
         self.btn_start.setMinimumHeight(40)
         self.btn_start.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
         self.btn_start.clicked.connect(self.start_automation)
 
-        self.btn_pause = QPushButton("⏸️ Pause")
+        self.btn_pause = QPushButton("Pause")
         self.btn_pause.setMinimumHeight(40)
         self.btn_pause.setStyleSheet("background-color: #FF9800; color: white; font-weight: bold;")
         self.btn_pause.setEnabled(False)
         self.btn_pause.clicked.connect(self.pause_automation)
 
-        self.btn_stop = QPushButton("⏹️ Stop")
+        self.btn_stop = QPushButton("Stop")
         self.btn_stop.setMinimumHeight(40)
         self.btn_stop.setStyleSheet("background-color: #f44336; color: white; font-weight: bold;")
         self.btn_stop.setEnabled(False)
@@ -144,7 +144,7 @@ class WhatsAppAutomatorApp(QMainWindow):
         self.ticker_frame.setStyleSheet("background-color: #1a1a2e; border-radius: 6px; padding: 4px;")
         ticker_layout = QHBoxLayout(self.ticker_frame)
         ticker_layout.setContentsMargins(8, 4, 8, 4)
-        self.lbl_ticker = QLabel("📡 Waiting for activity...")
+        self.lbl_ticker = QLabel("Waiting for activity...")
         self.lbl_ticker.setStyleSheet("color: #00ff88; font-size: 13px; font-weight: bold;")
         ticker_layout.addWidget(self.lbl_ticker)
         layout.addWidget(self.ticker_frame)
@@ -160,7 +160,7 @@ class WhatsAppAutomatorApp(QMainWindow):
         
         # --- Formatting Toolbar ---
         fmt_layout = QHBoxLayout()
-        fmt_label = QLabel("✍️ Text Formatting:")
+        fmt_label = QLabel("Text Formatting:")
         fmt_label.setStyleSheet("font-weight: bold; font-size: 13px;")
         fmt_layout.addWidget(fmt_label)
         
@@ -179,7 +179,7 @@ class WhatsAppAutomatorApp(QMainWindow):
         btn_strike.setToolTip("Wrap selected text with ~tildes~ for strikethrough")
         btn_strike.clicked.connect(lambda: self.insert_format("~"))
         
-        btn_mono = QPushButton("⌨ Mono")
+        btn_mono = QPushButton("Mono")
         btn_mono.setStyleSheet("font-family: monospace; min-width: 80px;")
         btn_mono.setToolTip("Wrap selected text with ```backticks``` for monospace")
         btn_mono.clicked.connect(lambda: self.insert_format("```"))
@@ -210,17 +210,17 @@ class WhatsAppAutomatorApp(QMainWindow):
         # --- Buttons Row ---
         btn_row = QHBoxLayout()
         
-        btn_add = QPushButton("➕ Add Preset")
+        btn_add = QPushButton("+ Add Preset")
         btn_add.setMinimumHeight(36)
         btn_add.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; font-size: 13px;")
         btn_add.clicked.connect(lambda: self.add_preset_row("", ""))
         
-        btn_save_cloud = QPushButton("☁️ Save to Cloud")
+        btn_save_cloud = QPushButton("Save to Cloud")
         btn_save_cloud.setMinimumHeight(36)
         btn_save_cloud.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold; font-size: 13px;")
         btn_save_cloud.clicked.connect(self.save_presets_to_cloud)
         
-        btn_load_cloud = QPushButton("⬇️ Load from Cloud")
+        btn_load_cloud = QPushButton("Load from Cloud")
         btn_load_cloud.setMinimumHeight(36)
         btn_load_cloud.setStyleSheet("background-color: #9C27B0; color: white; font-weight: bold; font-size: 13px;")
         btn_load_cloud.clicked.connect(self.load_presets_from_cloud)
@@ -245,7 +245,8 @@ class WhatsAppAutomatorApp(QMainWindow):
         kw_input.setMaximumWidth(200)
         kw_input.setStyleSheet("font-size: 13px; padding: 6px; border: 1px solid #ccc; border-radius: 4px;")
         
-        lbl_arrow = QLabel("➡️")
+        lbl_arrow = QLabel(">>")
+        lbl_arrow.setStyleSheet("font-weight: bold; font-size: 14px; color: #555;")
         lbl_arrow.setFixedWidth(30)
         
         reply_input = QLineEdit()
@@ -253,7 +254,7 @@ class WhatsAppAutomatorApp(QMainWindow):
         reply_input.setText(reply)
         reply_input.setStyleSheet("font-size: 13px; padding: 6px; border: 1px solid #ccc; border-radius: 4px;")
         
-        btn_delete = QPushButton("❌")
+        btn_delete = QPushButton("X")
         btn_delete.setFixedWidth(36)
         btn_delete.setStyleSheet("background-color: #f44336; color: white; border-radius: 4px; font-size: 14px;")
         btn_delete.clicked.connect(lambda: self.remove_preset_row(row_frame, kw_input, reply_input))
@@ -317,7 +318,7 @@ class WhatsAppAutomatorApp(QMainWindow):
             self.authenticate_firebase()
             presets = self.get_presets_dict()
             db.reference('/wa_bot/presets').set(presets)
-            self.signals.log_msg.emit(f"☁️ Saved {len(presets)} presets to cloud!")
+            self.signals.log_msg.emit(f"[CLOUD] Saved {len(presets)} presets to cloud.")
         except Exception as e:
             self.signals.log_msg.emit(f"Cloud save failed: {str(e)}")
     
@@ -332,7 +333,7 @@ class WhatsAppAutomatorApp(QMainWindow):
             if data and isinstance(data, dict):
                 self._cloud_presets_data = data
                 self.signals.presets_loaded.emit()
-                self.signals.log_msg.emit(f"⬇️ Loaded {len(data)} presets from cloud!")
+                self.signals.log_msg.emit(f"[CLOUD] Loaded {len(data)} presets from cloud.")
             else:
                 self.signals.log_msg.emit("No presets found in cloud.")
         except Exception as e:
@@ -381,7 +382,7 @@ class WhatsAppAutomatorApp(QMainWindow):
         scrollbar = self.txt_history.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
         # Update ticker
-        self.lbl_ticker.setText(f"📡 {msg[:80]}")
+        self.lbl_ticker.setText(f"{msg[:80]}")
         # Save to Firebase cloud
         self.save_history_to_cloud(full_entry)
 
@@ -389,10 +390,10 @@ class WhatsAppAutomatorApp(QMainWindow):
         layout = QVBoxLayout(self.tab_browser)
         
         info = QLabel(
-            "🚀 Speed Update: WhatsApp Web will now open directly in a fast Google Chrome window "
-            "controlled by our Bot Engine rather than being embedded here.\n\n"
-            "This makes the bot 10x faster and 100% reliable at clicking 'Send'.\n\n"
-            "When you click 'Start', you will see a Chrome window pop up automatically."
+            "WhatsApp Web will open directly in a Chrome window "
+            "controlled by the Bot Engine.\n\n"
+            "This makes the bot faster and more reliable.\n\n"
+            "When you click Start, a Chrome window will open automatically."
         )
         info.setWordWrap(True)
         info.setStyleSheet("font-size: 16px; margin: 20px;")
@@ -447,7 +448,7 @@ class WhatsAppAutomatorApp(QMainWindow):
             })
 
     def check_status_thread(self):
-        self.signals.status_update.emit("🟡 Connecting...", "Pending Messages: --")
+        self.signals.status_update.emit("[...] Connecting...", "Pending Messages: --")
         threading.Thread(target=self._check_status_worker, daemon=True).start()
 
     def _check_status_worker(self):
@@ -459,7 +460,7 @@ class WhatsAppAutomatorApp(QMainWindow):
             data = ref.get()
             
             if data is None:
-                self.signals.status_update.emit("🟢 Connected (No Data Found)", "Pending Messages: 0")
+                self.signals.status_update.emit("[OK] Connected (No Data Found)", "Pending Messages: 0")
                 return
 
             pending_count = 0
@@ -471,12 +472,12 @@ class WhatsAppAutomatorApp(QMainWindow):
                         if status == "" or status == "none" or status == "pending":
                             pending_count += 1
                             
-            self.signals.status_update.emit("🟢 Connected to Firebase", f"Pending Messages: {pending_count}")
+            self.signals.status_update.emit("[OK] Connected to Firebase", f"Pending Messages: {pending_count}")
         except FileNotFoundError:
-            self.signals.status_update.emit("🔴 Disconnected (No JSON)", "Pending: --")
+            self.signals.status_update.emit("[OFFLINE] Disconnected (No JSON)", "Pending: --")
             self.signals.log_msg.emit("Error: firebase_credentials.json not found in directory.")
         except Exception as e:
-            self.signals.status_update.emit("🔴 Disconnected (Error)", "Pending: --")
+            self.signals.status_update.emit("[OFFLINE] Disconnected (Error)", "Pending: --")
             self.signals.log_msg.emit(f"Status check failed: {str(e)}")
 
     def start_automation(self):
@@ -488,7 +489,7 @@ class WhatsAppAutomatorApp(QMainWindow):
         
         self.btn_start.setEnabled(False)
         self.btn_pause.setEnabled(True)
-        self.btn_pause.setText("⏸️ Pause")
+        self.btn_pause.setText("Pause")
         self.btn_stop.setEnabled(True)
         
         self.signals.log_msg.emit("=== Automation Started ===")
@@ -500,11 +501,11 @@ class WhatsAppAutomatorApp(QMainWindow):
     def pause_automation(self):
         if not self.is_paused:
             self.is_paused = True
-            self.btn_pause.setText("▶️ Resume")
+            self.btn_pause.setText("Resume")
             self.signals.log_msg.emit("Automation paused... Will hold before next action.")
         else:
             self.is_paused = False
-            self.btn_pause.setText("⏸️ Pause")
+            self.btn_pause.setText("Pause")
             self.signals.log_msg.emit("Automation resumed.")
 
     def stop_automation(self):
@@ -562,7 +563,7 @@ class WhatsAppAutomatorApp(QMainWindow):
                 try:
                     _ = self.driver.title  # Quick health check
                     driver = self.driver
-                    self.signals.log_msg.emit("♻️ Reusing existing Chrome session — no re-login needed!")
+                    self.signals.log_msg.emit("[SESSION] Reusing existing Chrome session.")
                 except:
                     self.signals.log_msg.emit("Previous Chrome died. Starting fresh...")
                     self.driver = None
@@ -623,7 +624,7 @@ class WhatsAppAutomatorApp(QMainWindow):
             # Check if QR code is present (meaning not logged in)
             try:
                 driver.find_element(By.CSS_SELECTOR, 'canvas[aria-label="Scan me!"]')
-                self.signals.log_msg.emit("🚨 PLEASE SCAN THE QR CODE ON THE CHROME WINDOW! 🚨")
+                self.signals.log_msg.emit("[ACTION REQUIRED] Please scan the QR code in the Chrome window.")
                 WebDriverWait(driver, 300).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, 'div#side'))
                 )
@@ -739,7 +740,7 @@ class WhatsAppAutomatorApp(QMainWindow):
                                 return banner ? true : false;
                             """)
                             if disconnected:
-                                self.signals.log_msg.emit("[Auto-Reply] ⚠️ WhatsApp disconnected. Waiting for reconnection...")
+                                self.signals.log_msg.emit("[Auto-Reply] WARNING: WhatsApp disconnected. Waiting for reconnection...")
                                 time.sleep(10)
                                 continue
                         except:
@@ -849,7 +850,7 @@ class WhatsAppAutomatorApp(QMainWindow):
                                                 time.sleep(0.5)
                                                 ActionChains(driver).send_keys(Keys.ENTER).perform()
                                                 time.sleep(2)
-                                                self.signals.log_msg.emit(f"[Auto-Reply] ✅ Reply sent to {chat_title}!")
+                                                self.signals.log_msg.emit(f"[Auto-Reply] Reply sent to {chat_title}.")
                                             else:
                                                 self.signals.log_msg.emit("[Auto-Reply] Could not find chat input box!")
                                             break
@@ -897,16 +898,10 @@ class WhatsAppAutomatorApp(QMainWindow):
             self.signals.finished.emit()
 
 from PyQt6 import QtCore
-from PyQt6.QtGui import QFont
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    
-    # Set a font that supports emojis on Windows
-    emoji_font = QFont("Segoe UI Emoji", 10)
-    emoji_font.setFamilies(["Segoe UI Emoji", "Segoe UI", "Arial"])
-    app.setFont(emoji_font)
     
     window = WhatsAppAutomatorApp()
     window.show()
