@@ -41,7 +41,7 @@ class WhatsAppAutomatorApp(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("Classic Farmer WhatsApp Automator")
+        self.setWindowTitle("Whatsapp Automator Service")
         self.resize(1000, 700)
         
         # State Variables
@@ -487,11 +487,16 @@ class WhatsAppAutomatorApp(QMainWindow):
             self.signals.log_msg.emit(f"Active presets: {self.current_presets}")
             
             time.sleep(2)
-            ActionChains(driver).send_keys(Keys.ESCAPE).perform()
+            try:
+                ActionChains(driver).send_keys(Keys.ESCAPE).perform()
+            except:
+                pass
             time.sleep(2)
             
             scan_count = 0
-            visited_chats = {}  # {chat_title: timestamp} to prevent looping
+            # Track "chat:msg" combos so SAME chat with NEW message is processed
+            replied_messages = {}  # {"chatTitle:msgText": timestamp}
+            failed_chats = {}  # {chatTitle: timestamp} — skip chats where extraction failed
             
             while self.is_running:
                 while self.is_paused and self.is_running: time.sleep(1)
@@ -500,6 +505,35 @@ class WhatsAppAutomatorApp(QMainWindow):
                 scan_count += 1
                 
                 try:
+                    # --- Health check every 30 scans ---
+                    if scan_count % 30 == 0:
+                        try:
+                            _ = driver.title
+                        except:
+                            self.signals.log_msg.emit("[Auto-Reply] Chrome died! Attempting recovery...")
+                            try:
+                                self.driver = None
+                                driver = None
+                            except:
+                                pass
+                            break  # Exit loop to trigger the outer except/finally
+                    
+                    # --- WhatsApp disconnect detection ---
+                    if scan_count % 15 == 0:
+                        try:
+                            disconnected = driver.execute_script("""
+                                var banner = document.querySelector('[data-testid="alert-phone"]')
+                                          || document.querySelector('[data-icon="alert-phone"]');
+                                return banner ? true : false;
+                            """)
+                            if disconnected:
+                                self.signals.log_msg.emit("[Auto-Reply] ⚠️ WhatsApp disconnected. Waiting for reconnection...")
+                                time.sleep(10)
+                                continue
+                        except:
+                            pass
+                    
+                    # --- Find unread badges ---
                     unread_badges = driver.find_elements(By.XPATH, "//span[contains(@aria-label, 'unread message')]")
                     if not unread_badges:
                         unread_badges = driver.find_elements(By.XPATH, "//span[contains(@aria-label, 'unread')]")
@@ -508,7 +542,6 @@ class WhatsAppAutomatorApp(QMainWindow):
                         self.signals.log_msg.emit(f"[Auto-Reply] Scan #{scan_count}: {len(unread_badges)} unread. Monitoring...")
                     
                     if unread_badges:
-                        processed = False
                         for badge in unread_badges:
                             try:
                                 chat_row = None
@@ -523,30 +556,25 @@ class WhatsAppAutomatorApp(QMainWindow):
                                 chat_title = chat_row.text.split('\n')[0] if chat_row.text else ""
                                 if not chat_title or 'archived' in chat_title.lower(): continue
                                 
-                                # Skip recently visited chats (60s cooldown)
+                                # Skip chats that failed extraction recently (120s cooldown)
                                 now_ts = time.time()
-                                if chat_title in visited_chats and (now_ts - visited_chats[chat_title]) < 60:
+                                if chat_title in failed_chats and (now_ts - failed_chats[chat_title]) < 120:
                                     continue
                                 
                                 self.signals.log_msg.emit(f"[Auto-Reply] Unread from: {chat_title}. Opening...")
                                 chat_row.click()
                                 time.sleep(3)
-                                visited_chats[chat_title] = time.time()
                                 
-                                # --- AGGRESSIVE message extraction via JavaScript ---
+                                # --- Message extraction ---
                                 last_msg_js = """
-                                    // Helper: check if text is a timestamp (e.g. '12:17 pm', '3:45 AM')
                                     function isTimestamp(s) {
                                         return /^\\d{1,2}:\\d{2}(\\s*(am|pm|AM|PM))?$/.test(s.trim());
                                     }
                                     function isGoodText(s) {
                                         return s && s.trim().length > 0 && s.trim().length < 500 && !isTimestamp(s);
                                     }
-                                    
-                                    // APPROACH 1: Look for copyable-text containers (most reliable)
                                     var main = document.getElementById('main');
                                     if (main) {
-                                        // Find all incoming message rows (not sent by us)
                                         var rows = main.querySelectorAll('[data-id]');
                                         var incoming = [];
                                         for (var i = 0; i < rows.length; i++) {
@@ -555,26 +583,20 @@ class WhatsAppAutomatorApp(QMainWindow):
                                         }
                                         if (incoming.length > 0) {
                                             var last = incoming[incoming.length - 1];
-                                            // Try copyable-text span first (direct message text)
                                             var ct = last.querySelector('.copyable-text [dir]')
                                                   || last.querySelector('.selectable-text [dir]')
                                                   || last.querySelector('span.selectable-text span');
                                             if (ct && isGoodText(ct.innerText)) return ct.innerText.trim();
-                                            // Fallback: scan spans but skip timestamps
                                             var spans = last.querySelectorAll('span');
                                             for (var j = 0; j < spans.length; j++) {
                                                 if (isGoodText(spans[j].innerText)) return spans[j].innerText.trim();
                                             }
                                         }
-                                        
-                                        // APPROACH 2: span[dir] in main, scan from bottom, skip timestamps
                                         var dirSpans = main.querySelectorAll('span[dir="ltr"], span[dir="rtl"], span[dir="auto"]');
                                         for (var k = dirSpans.length - 1; k >= 0; k--) {
                                             if (isGoodText(dirSpans[k].innerText)) return dirSpans[k].innerText.trim();
                                         }
                                     }
-                                    
-                                    // APPROACH 3: message-in class
                                     var msgIn = document.querySelectorAll('div.message-in, [class*="message-in"]');
                                     if (msgIn.length > 0) {
                                         var last2 = msgIn[msgIn.length - 1];
@@ -589,8 +611,10 @@ class WhatsAppAutomatorApp(QMainWindow):
                                 
                                 self.signals.log_msg.emit(f"[Auto-Reply] Message from {chat_title}: '{latest_msg_text}'")
                                 
-                                if latest_msg_text:
-                                    reply_sent = False
+                                # Build a unique key = "chat:message" to prevent duplicate replies
+                                reply_key = f"{chat_title}:{latest_msg_text}"
+                                
+                                if latest_msg_text and reply_key not in replied_messages:
                                     for kw, reply_text in self.current_presets.items():
                                         if kw == latest_msg_text:
                                             self.signals.log_msg.emit(f"[Auto-Reply] MATCH '{kw}'! Sending reply...")
@@ -615,33 +639,38 @@ class WhatsAppAutomatorApp(QMainWindow):
                                                 ActionChains(driver).send_keys(Keys.ENTER).perform()
                                                 time.sleep(2)
                                                 self.signals.log_msg.emit(f"[Auto-Reply] ✅ Reply sent to {chat_title}!")
-                                                reply_sent = True
+                                                replied_messages[reply_key] = time.time()
                                             else:
                                                 self.signals.log_msg.emit("[Auto-Reply] Could not find chat input box!")
                                             break
-                                    
-                                    if not reply_sent:
+                                    else:
+                                        # No preset matched — still mark as seen so we don't loop
+                                        replied_messages[reply_key] = time.time()
                                         self.signals.history_msg.emit(f"Read from {chat_title}: '{latest_msg_text}' (No preset match)")
-                                else:
-                                    self.signals.log_msg.emit(f"[Auto-Reply] Could not read message from {chat_title}. Skipping 60s.")
+                                elif not latest_msg_text:
+                                    # Mark as failed so we skip it for 120 seconds
+                                    failed_chats[chat_title] = time.time()
+                                    self.signals.log_msg.emit(f"[Auto-Reply] Could not extract text from {chat_title}. Skipping 2 min.")
                                 
+                                # Go back to chat list
                                 ActionChains(driver).send_keys(Keys.ESCAPE).perform()
                                 time.sleep(1)
-                                processed = True
-                                break
+                                break  # One chat per scan cycle
                                 
                             except Exception as badge_e:
                                 self.signals.log_msg.emit(f"[Auto-Reply] Error: {str(badge_e)[:80]}")
+                                try:
+                                    ActionChains(driver).send_keys(Keys.ESCAPE).perform()
+                                except:
+                                    pass
                                 continue
-                        
-                        if not processed:
-                            time.sleep(3)
                     else:
                         time.sleep(3)
                     
-                    # Clean up old visited entries
+                    # Clean up old entries
                     now_ts = time.time()
-                    visited_chats = {k: v for k, v in visited_chats.items() if (now_ts - v) < 60}
+                    failed_chats = {k: v for k, v in failed_chats.items() if (now_ts - v) < 120}
+                    replied_messages = {k: v for k, v in replied_messages.items() if (now_ts - v) < 300}
                         
                 except Exception as loop_e:
                     self.signals.log_msg.emit(f"[Auto-Reply] Loop error: {str(loop_e)[:100]}")
@@ -649,7 +678,7 @@ class WhatsAppAutomatorApp(QMainWindow):
                         ActionChains(driver).send_keys(Keys.ESCAPE).perform()
                     except:
                         pass
-                    time.sleep(3)
+                    time.sleep(5)
 
 
         except Exception as e:
