@@ -9,7 +9,8 @@ from firebase_admin import credentials, db
 # PyQt6 imports for classic UI
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QPushButton, QLabel, QTextEdit, QTabWidget,
-                             QMessageBox, QLineEdit, QFormLayout)
+                             QMessageBox, QLineEdit, QFormLayout, QScrollArea,
+                             QGroupBox, QGridLayout, QFrame)
 from PyQt6.QtCore import QUrl, pyqtSignal, QObject, Qt, QMetaObject
 
 # Selenium imports for rock-solid web automation
@@ -32,6 +33,7 @@ class WorkerSignals(QObject):
     finished = pyqtSignal()
     error = pyqtSignal(str)
     history_msg = pyqtSignal(str) # For History tab
+    presets_loaded = pyqtSignal()  # Cloud presets loaded
     # Add specific signals for the browser
     navigate_url = pyqtSignal(str)
     execute_js = pyqtSignal(str)
@@ -48,7 +50,8 @@ class WhatsAppAutomatorApp(QMainWindow):
         self.is_running = False
         self.is_paused = False
         self.fb_app = None
-        self.driver = None  # Reusable Selenium driver — keeps WhatsApp logged in
+        self.driver = None
+        self.preset_rows = []  # List of (keyword_input, reply_input) tuples
 
         # --- Build Classic UI ---
         self.central_widget = QWidget()
@@ -84,6 +87,7 @@ class WhatsAppAutomatorApp(QMainWindow):
         self.signals.finished.connect(self.on_automation_finished)
         self.signals.error.connect(self.show_error_dialog)
         self.signals.history_msg.connect(self.append_history)
+        self.signals.presets_loaded.connect(self._on_presets_loaded)
 
         # Initial check
         self.check_status_thread()
@@ -135,6 +139,16 @@ class WhatsAppAutomatorApp(QMainWindow):
         
         layout.addLayout(self.control_layout)
 
+        # Response Ticker
+        self.ticker_frame = QFrame()
+        self.ticker_frame.setStyleSheet("background-color: #1a1a2e; border-radius: 6px; padding: 4px;")
+        ticker_layout = QHBoxLayout(self.ticker_frame)
+        ticker_layout.setContentsMargins(8, 4, 8, 4)
+        self.lbl_ticker = QLabel("📡 Waiting for activity...")
+        self.lbl_ticker.setStyleSheet("color: #00ff88; font-size: 13px; font-weight: bold;")
+        ticker_layout.addWidget(self.lbl_ticker)
+        layout.addWidget(self.ticker_frame)
+
         # Logs
         layout.addWidget(QLabel("Live Activity Log:"))
         self.txt_log = QTextEdit()
@@ -143,16 +157,215 @@ class WhatsAppAutomatorApp(QMainWindow):
 
     def setup_presets_tab(self):
         layout = QVBoxLayout(self.tab_presets)
-        info = QLabel(
-            "Define Keyword Auto-Replies here.\n"
-            "Format: keyword = Your reply message\n"
-            "Example: price = The price is Rs 100."
-        )
-        info.setStyleSheet("font-size: 14px; font-weight: bold;")
-        layout.addWidget(info)
-        self.txt_presets = QTextEdit()
-        self.txt_presets.setText("hello = Hi! I am currently away. This is an auto-reply.\nhelp = Please contact admin at 9391507369.")
-        layout.addWidget(self.txt_presets)
+        
+        # --- Formatting Toolbar ---
+        fmt_layout = QHBoxLayout()
+        fmt_label = QLabel("✍️ Text Formatting:")
+        fmt_label.setStyleSheet("font-weight: bold; font-size: 13px;")
+        fmt_layout.addWidget(fmt_label)
+        
+        btn_bold = QPushButton("B (Bold)")
+        btn_bold.setStyleSheet("font-weight: bold; min-width: 80px;")
+        btn_bold.setToolTip("Wrap selected text with *asterisks* for bold")
+        btn_bold.clicked.connect(lambda: self.insert_format("*"))
+        
+        btn_italic = QPushButton("I (Italic)")
+        btn_italic.setStyleSheet("font-style: italic; min-width: 80px;")
+        btn_italic.setToolTip("Wrap selected text with _underscores_ for italic")
+        btn_italic.clicked.connect(lambda: self.insert_format("_"))
+        
+        btn_strike = QPushButton("S (Strike)")
+        btn_strike.setStyleSheet("text-decoration: line-through; min-width: 80px;")
+        btn_strike.setToolTip("Wrap selected text with ~tildes~ for strikethrough")
+        btn_strike.clicked.connect(lambda: self.insert_format("~"))
+        
+        btn_mono = QPushButton("⌨ Mono")
+        btn_mono.setStyleSheet("font-family: monospace; min-width: 80px;")
+        btn_mono.setToolTip("Wrap selected text with ```backticks``` for monospace")
+        btn_mono.clicked.connect(lambda: self.insert_format("```"))
+        
+        fmt_layout.addWidget(btn_bold)
+        fmt_layout.addWidget(btn_italic)
+        fmt_layout.addWidget(btn_strike)
+        fmt_layout.addWidget(btn_mono)
+        fmt_layout.addStretch()
+        layout.addLayout(fmt_layout)
+        
+        # --- Preset Rows (scrollable) ---
+        self.presets_scroll = QScrollArea()
+        self.presets_scroll.setWidgetResizable(True)
+        self.presets_container = QWidget()
+        self.presets_layout = QVBoxLayout(self.presets_container)
+        self.presets_layout.setSpacing(6)
+        self.presets_scroll.setWidget(self.presets_container)
+        layout.addWidget(self.presets_scroll)
+        
+        # Add default presets
+        self.add_preset_row("hello", "Hi! I am currently away. This is an auto-reply.")
+        self.add_preset_row("help", "Please contact admin at 9391507369.")
+        
+        # Spacer at bottom of scroll
+        self.presets_layout.addStretch()
+        
+        # --- Buttons Row ---
+        btn_row = QHBoxLayout()
+        
+        btn_add = QPushButton("➕ Add Preset")
+        btn_add.setMinimumHeight(36)
+        btn_add.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; font-size: 13px;")
+        btn_add.clicked.connect(lambda: self.add_preset_row("", ""))
+        
+        btn_save_cloud = QPushButton("☁️ Save to Cloud")
+        btn_save_cloud.setMinimumHeight(36)
+        btn_save_cloud.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold; font-size: 13px;")
+        btn_save_cloud.clicked.connect(self.save_presets_to_cloud)
+        
+        btn_load_cloud = QPushButton("⬇️ Load from Cloud")
+        btn_load_cloud.setMinimumHeight(36)
+        btn_load_cloud.setStyleSheet("background-color: #9C27B0; color: white; font-weight: bold; font-size: 13px;")
+        btn_load_cloud.clicked.connect(self.load_presets_from_cloud)
+        
+        btn_row.addWidget(btn_add)
+        btn_row.addWidget(btn_save_cloud)
+        btn_row.addWidget(btn_load_cloud)
+        layout.addLayout(btn_row)
+    
+    def add_preset_row(self, keyword="", reply=""):
+        """Add a single keyword-reply preset row to the UI."""
+        row_frame = QFrame()
+        row_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        row_frame.setStyleSheet("QFrame { background-color: #f5f5f5; border-radius: 6px; padding: 4px; }")
+        row_layout = QHBoxLayout(row_frame)
+        row_layout.setContentsMargins(6, 4, 6, 4)
+        
+        kw_input = QLineEdit()
+        kw_input.setPlaceholderText("Keyword (e.g. hello)")
+        kw_input.setText(keyword)
+        kw_input.setMinimumWidth(150)
+        kw_input.setMaximumWidth(200)
+        kw_input.setStyleSheet("font-size: 13px; padding: 6px; border: 1px solid #ccc; border-radius: 4px;")
+        
+        lbl_arrow = QLabel("➡️")
+        lbl_arrow.setFixedWidth(30)
+        
+        reply_input = QLineEdit()
+        reply_input.setPlaceholderText("Reply message (e.g. Hi! This is an auto-reply.)")
+        reply_input.setText(reply)
+        reply_input.setStyleSheet("font-size: 13px; padding: 6px; border: 1px solid #ccc; border-radius: 4px;")
+        
+        btn_delete = QPushButton("❌")
+        btn_delete.setFixedWidth(36)
+        btn_delete.setStyleSheet("background-color: #f44336; color: white; border-radius: 4px; font-size: 14px;")
+        btn_delete.clicked.connect(lambda: self.remove_preset_row(row_frame, kw_input, reply_input))
+        
+        row_layout.addWidget(kw_input)
+        row_layout.addWidget(lbl_arrow)
+        row_layout.addWidget(reply_input, 1)  # stretch
+        row_layout.addWidget(btn_delete)
+        
+        # Insert before the stretch spacer
+        insert_pos = self.presets_layout.count() - 1
+        if insert_pos < 0: insert_pos = 0
+        self.presets_layout.insertWidget(insert_pos, row_frame)
+        self.preset_rows.append((kw_input, reply_input, row_frame))
+        
+        # Store reference to last-edited reply input for formatting toolbar
+        reply_input.focusInEvent = lambda e, ri=reply_input: setattr(self, '_active_reply_input', ri) or QLineEdit.focusInEvent(ri, e)
+    
+    def remove_preset_row(self, frame, kw_input, reply_input):
+        """Remove a preset row from the UI."""
+        self.preset_rows = [(k, r, f) for k, r, f in self.preset_rows if f != frame]
+        frame.setParent(None)
+        frame.deleteLater()
+    
+    def insert_format(self, marker):
+        """Insert WhatsApp formatting markers around selected text or at cursor."""
+        target = getattr(self, '_active_reply_input', None)
+        if not target:
+            # Use the last reply input if none focused
+            if self.preset_rows:
+                target = self.preset_rows[-1][1]
+            else:
+                return
+        text = target.text()
+        sel_start = target.selectionStart()
+        sel_end = sel_start + len(target.selectedText())
+        if target.selectedText():
+            new_text = text[:sel_start] + marker + target.selectedText() + marker + text[sel_end:]
+        else:
+            cursor = target.cursorPosition()
+            new_text = text[:cursor] + marker + marker + text[cursor:]
+        target.setText(new_text)
+    
+    def get_presets_dict(self):
+        """Get current presets as a {keyword: reply} dictionary."""
+        presets = {}
+        for kw_input, reply_input, _ in self.preset_rows:
+            kw = kw_input.text().strip()
+            reply = reply_input.text().strip()
+            if kw and reply:
+                presets[kw] = reply
+        return presets
+    
+    # --- Firebase Cloud Sync ---
+    def save_presets_to_cloud(self):
+        """Save all presets to Firebase Realtime Database."""
+        threading.Thread(target=self._save_presets_worker, daemon=True).start()
+    
+    def _save_presets_worker(self):
+        try:
+            self.authenticate_firebase()
+            presets = self.get_presets_dict()
+            db.reference('/wa_bot/presets').set(presets)
+            self.signals.log_msg.emit(f"☁️ Saved {len(presets)} presets to cloud!")
+        except Exception as e:
+            self.signals.log_msg.emit(f"Cloud save failed: {str(e)}")
+    
+    def load_presets_from_cloud(self):
+        """Load presets from Firebase and populate UI."""
+        threading.Thread(target=self._load_presets_worker, daemon=True).start()
+    
+    def _load_presets_worker(self):
+        try:
+            self.authenticate_firebase()
+            data = db.reference('/wa_bot/presets').get()
+            if data and isinstance(data, dict):
+                self._cloud_presets_data = data
+                self.signals.presets_loaded.emit()
+                self.signals.log_msg.emit(f"⬇️ Loaded {len(data)} presets from cloud!")
+            else:
+                self.signals.log_msg.emit("No presets found in cloud.")
+        except Exception as e:
+            self.signals.log_msg.emit(f"Cloud load failed: {str(e)}")
+    
+    def _on_presets_loaded(self):
+        """Apply loaded cloud presets to the UI (runs on main thread via signal)."""
+        data = getattr(self, '_cloud_presets_data', None)
+        if not data:
+            return
+        # Clear existing rows
+        for _, _, frame in self.preset_rows:
+            frame.setParent(None)
+            frame.deleteLater()
+        self.preset_rows.clear()
+        # Add loaded presets
+        for kw, reply in data.items():
+            self.add_preset_row(str(kw), str(reply))
+        self._cloud_presets_data = None
+    
+    def save_history_to_cloud(self, entry):
+        """Save a single history entry to Firebase (runs in background)."""
+        def _worker():
+            try:
+                self.authenticate_firebase()
+                ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                db.reference('/wa_bot/history').push({
+                    'timestamp': ts,
+                    'entry': entry
+                })
+            except:
+                pass
+        threading.Thread(target=_worker, daemon=True).start()
         
     def setup_history_tab(self):
         layout = QVBoxLayout(self.tab_history)
@@ -163,9 +376,14 @@ class WhatsAppAutomatorApp(QMainWindow):
 
     def append_history(self, msg):
         ts = datetime.now().strftime("[%H:%M:%S]")
-        self.txt_history.append(f"{ts} {msg}")
+        full_entry = f"{ts} {msg}"
+        self.txt_history.append(full_entry)
         scrollbar = self.txt_history.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
+        # Update ticker
+        self.lbl_ticker.setText(f"📡 {msg[:80]}")
+        # Save to Firebase cloud
+        self.save_history_to_cloud(full_entry)
 
     def setup_browser_tab(self):
         layout = QVBoxLayout(self.tab_browser)
@@ -265,12 +483,8 @@ class WhatsAppAutomatorApp(QMainWindow):
         self.is_running = True
         self.is_paused = False
         
-        # Parse active presets into dictionary for the worker
-        self.current_presets = {}
-        for line in self.txt_presets.toPlainText().split('\n'):
-            if '=' in line:
-                kw, reply = line.split('=', 1)
-                self.current_presets[kw.strip()] = reply.strip()
+        # Parse active presets from the new row-based UI
+        self.current_presets = self.get_presets_dict()
         
         self.btn_start.setEnabled(False)
         self.btn_pause.setEnabled(True)
@@ -658,8 +872,7 @@ class WhatsAppAutomatorApp(QMainWindow):
                                 continue
                     else:
                         time.sleep(3)
-                    
-                    # Clean up old entries
+                
                     now_ts = time.time()
                     failed_chats = {k: v for k, v in failed_chats.items() if (now_ts - v) < 120}
                         
@@ -681,12 +894,11 @@ class WhatsAppAutomatorApp(QMainWindow):
                 pass
             self.signals.finished.emit()
 
-# We need QtCore for the Q_ARG macro
 from PyQt6 import QtCore
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    app.setStyle("Fusion") # Gives a nice classic look across all OS
+    app.setStyle("Fusion")
     
     window = WhatsAppAutomatorApp()
     window.show()
