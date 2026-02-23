@@ -494,8 +494,6 @@ class WhatsAppAutomatorApp(QMainWindow):
             time.sleep(2)
             
             scan_count = 0
-            # Track "chat:msg" combos so SAME chat with NEW message is processed
-            replied_messages = {}  # {"chatTitle:msgText": timestamp}
             failed_chats = {}  # {chatTitle: timestamp} — skip chats where extraction failed
             
             while self.is_running:
@@ -611,12 +609,9 @@ class WhatsAppAutomatorApp(QMainWindow):
                                 
                                 self.signals.log_msg.emit(f"[Auto-Reply] Message from {chat_title}: '{latest_msg_text}'")
                                 
-                                # Build a unique key = "chat:message" to prevent duplicate replies
-                                reply_key = f"{chat_title}:{latest_msg_text}"
-                                
-                                if latest_msg_text and reply_key not in replied_messages:
+                                if latest_msg_text:
                                     for kw, reply_text in self.current_presets.items():
-                                        if kw == latest_msg_text:
+                                        if kw.lower() == latest_msg_text.lower():
                                             self.signals.log_msg.emit(f"[Auto-Reply] MATCH '{kw}'! Sending reply...")
                                             self.signals.history_msg.emit(f"IN ({chat_title}): '{latest_msg_text}' | OUT: '{reply_text}'")
                                             
@@ -639,13 +634,10 @@ class WhatsAppAutomatorApp(QMainWindow):
                                                 ActionChains(driver).send_keys(Keys.ENTER).perform()
                                                 time.sleep(2)
                                                 self.signals.log_msg.emit(f"[Auto-Reply] ✅ Reply sent to {chat_title}!")
-                                                replied_messages[reply_key] = time.time()
                                             else:
                                                 self.signals.log_msg.emit("[Auto-Reply] Could not find chat input box!")
                                             break
                                     else:
-                                        # No preset matched — still mark as seen so we don't loop
-                                        replied_messages[reply_key] = time.time()
                                         self.signals.history_msg.emit(f"Read from {chat_title}: '{latest_msg_text}' (No preset match)")
                                 elif not latest_msg_text:
                                     # Mark as failed so we skip it for 120 seconds
@@ -670,7 +662,6 @@ class WhatsAppAutomatorApp(QMainWindow):
                     # Clean up old entries
                     now_ts = time.time()
                     failed_chats = {k: v for k, v in failed_chats.items() if (now_ts - v) < 120}
-                    replied_messages = {k: v for k, v in replied_messages.items() if (now_ts - v) < 300}
                         
                 except Exception as loop_e:
                     self.signals.log_msg.emit(f"[Auto-Reply] Loop error: {str(loop_e)[:100]}")
